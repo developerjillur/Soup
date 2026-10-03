@@ -19,6 +19,7 @@ import json
 import re
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from soup_cli.cli import app
@@ -26,6 +27,21 @@ from soup_cli.commands.train import UNSUPPORTED_RESUME_TASKS
 from tests._windows_ci import skip_on_windows_ci
 
 TINY_MODEL = "hf-internal-testing/tiny-random-LlamaForCausalLM"
+
+
+@pytest.fixture
+def no_hardware_fit_gate(monkeypatch):
+    """Keep the hardware-fit pre-flight out of the functional resume runs (#1574).
+
+    The pre-flight sizes a Hub id with no size marker in its name as a 7B model,
+    so on a host with a visible card it predicts 114 GB (PRM, full fine-tune) or
+    16 GB (MoLE) for TINY_MODEL and refuses run 1 before a step is taken. On CPU
+    it never runs (no VRAM to predict against), which is why CI passes. These
+    tests are about resume, not about the gate, so they run the same everywhere.
+    """
+    import soup_cli.commands.train as train_cmd
+
+    monkeypatch.setattr(train_cmd, "_hardware_fit_preflight", lambda *args, **kwargs: None)
 
 
 def _strip_ansi(text: str) -> str:
@@ -211,6 +227,7 @@ class TestResumeRefusalForUnsupportedTasks:
 
 
 @skip_on_windows_ci
+@pytest.mark.usefixtures("no_hardware_fit_gate")
 class TestPRMResume:
     """Functional verification of PRM resume with tiny model."""
 
@@ -298,6 +315,7 @@ class TestPRMResume:
 
 
 @skip_on_windows_ci
+@pytest.mark.usefixtures("no_hardware_fit_gate")
 class TestMoleRoutingResume:
     """Functional verification of MoLE resume with tiny model and task adapters."""
 
